@@ -69,17 +69,13 @@ def decrypt(encrypted_data, key, iv):
 
 class Authenticator:  
     def __call__(self, server, session, envelope, mechanism, auth_data):
-        print ("inicia autenticacion: ", mechanism,"aud:",auth_data)
-        print ("Usuario valido: ", VALID_USERNAME," Clave:",VALID_PASSWORD)
         if mechanism == 'LOGIN' or mechanism == 'PLAIN':
             if isinstance(auth_data, LoginPassword):
                 username, password = auth_data.login, auth_data.password
-                print(f"Usuario recibido: {username}")
-                print(f"Clave recibida: {password}")
                 
                 hashed_data=encrypt(password.decode('utf-8'), KEY, IV)
                 if username.decode('utf-8') == VALID_USERNAME and hashed_data == VALID_PASSWORD:
-                    print ("Entra por auth exitosa")
+                    print ("Entra auth exitosa")
                     return AuthResult(success=True)
         print ("Auth NO exitosa")
         return AuthResult(success=False, handled=False,message='Autenticacion necesaria')
@@ -98,8 +94,6 @@ class CustomSMTPHandler:
                charset = part.get_content_charset()
                body.append(part.get_payload(decode=True).decode(charset or 'utf-8',errors="ignore"))
         body_content = "\n".join(body)       
-        print(f"Obteniendo body:{body_content}")     
-        print(f"Fin Obteniendo body")     
         return body_content    
     #end get_body_to_file
 
@@ -110,28 +104,18 @@ class CustomSMTPHandler:
         msg['Subject'] = email_message['Subject']
         
         for part in email_message.walk():
-            #print ("pasa por 1")
             # Si es texto plano, crea un objeto MIMEText
             if part.get_content_type() == 'text/plain':
-                #print ("pasa por 2")
                 payload = part.get_payload(decode=True)
                 charset = part.get_content_charset() or 'utf-8'  # Selecciona una codificación predeterminada
                 body = MIMEText(payload.decode(charset) if payload else '', _charset=charset)
-                #print ("pasa por 3",body)
                 msg.attach(body)
-                #print ("pasa por 4")
             # Si es HTML, crea un objeto MIMEText con el tipo 'html'
             elif part.get_content_type() == 'text/html':
-                #print ("pasa por 5")
                 payload = part.get_payload(decode=True)
                 charset = part.get_content_charset() or 'utf-8'  # Selecciona una codificación predeterminada
                 body = MIMEText(payload.decode(charset) if payload else '', _subtype='html', _charset=charset)
-                #print ("pasa por 6",body)
                 msg.attach(body)
-                #print ("pasa por 7")
-        
-        #print ("Body",body)
-
         for part in email_message.iter_attachments():
             filename = part.get_filename()
             if filename:
@@ -222,9 +206,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    #data = "OXVCd0U0ck03dFB3UzN6VkVdzTNgwQpWN3/6J56j4yU="
-    #encrypted_data = encrypt(data, KEY, IV)
-    #print(f"Encrypted: {encrypted_data}")
-
-    #decrypted_data = decrypt(SMTP_PASSWORD, KEY, IV)
-    #print(f"Decrypted: {decrypted_data}")
