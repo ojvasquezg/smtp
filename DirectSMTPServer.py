@@ -1,5 +1,5 @@
-
 import os
+import html
 import asyncio
 import ipaddress
 import ssl
@@ -12,6 +12,7 @@ from email.mime.application import MIMEApplication
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import Envelope, AuthResult, LoginPassword
 from email.policy import default
+import secrets  # Hallazgo 2: Uso de 'secrets' en lugar de 'random' para números seguros
 import random
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -19,6 +20,8 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 import base64
 
+def escape_html_entities(data):  #Hallazgo 1
+    return html.escape(data)
 
 # Función para leer las propiedades desde el archivo
 def read_properties(file_path):
@@ -47,21 +50,30 @@ KEY = properties.get('smtp.encryptKey')  # Leer la clave como cadena de texto
 IV = properties.get('smtp.encryptIV')    # Leer el IV como cadena de texto
 LISTEN_IP=properties.get("smtp.listenIp")
 ALLOWED_PORT=properties.get("smtp.allowedPort")
-def encrypt(data, key, iv):
-    cipher = Cipher(algorithms.AES(key.encode('utf-8')), modes.CBC(iv.encode('utf-8')), backend=default_backend())
+
+# Función de cifrado
+def encrypt(data, key):
+    # Generar un IV aleatorio de 16 bytes
+    iv = os.urandom(16) #Hallazgo 4
+    cipher = Cipher(algorithms.AES(key.encode('utf-8')), modes.CBC(iv), backend=default_backend())
     encryptor = cipher.encryptor()
     padder = padding.PKCS7(128).padder()
     padded_data = padder.update(data.encode()) + padder.finalize()
     ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-    return base64.b64encode(iv.encode('utf-8') + ciphertext).decode('utf-8')
+    # Prepend the IV to the ciphertext and encode it in Base64
+    return base64.b64encode(iv + ciphertext).decode('utf-8')
 
-def decrypt(encrypted_data, key, iv):
+def decrypt(encrypted_data, key):
+    # Decode the Base64 encoded data
     encrypted_data = base64.b64decode(encrypted_data)
-    iv = encrypted_data[:16]
+    # Extract the first 16 bytes as the IV
+    iv = encrypted_data[:16] #Hallazgo 4
     ciphertext = encrypted_data[16:]
+    # Set up the cipher with the same key and IV
     cipher = Cipher(algorithms.AES(key.encode('utf-8')), modes.CBC(iv), backend=default_backend())
     decryptor = cipher.decryptor()
     unpadder = padding.PKCS7(128).unpadder()
+    # Decrypt and unpad the data
     padded_data = decryptor.update(ciphertext) + decryptor.finalize()
     data = unpadder.update(padded_data) + unpadder.finalize()
     return data.decode('utf-8')
@@ -72,9 +84,9 @@ class Authenticator:
         if mechanism == 'LOGIN' or mechanism == 'PLAIN':
             if isinstance(auth_data, LoginPassword):
                 username, password = auth_data.login, auth_data.password
-                
-                hashed_data=encrypt(password.decode('utf-8'), KEY, IV)
-                if username.decode('utf-8') == VALID_USERNAME and hashed_data == VALID_PASSWORD:
+                password=password.decode('utf-8')
+                unhashed_data=decrypt(VALID_PASSWORD, KEY)
+                if username.decode('utf-8') == VALID_USERNAME and unhashed_data == password:
                     print ("Entra auth exitosa")
                     return AuthResult(success=True)
         print ("Auth NO exitosa")
@@ -92,7 +104,10 @@ class CustomSMTPHandler:
             # Filtra solo las partes del cuerpo del mensaje que son texto y no son adjuntos
             if part.get_content_maintype() == 'text' and part.get('Content-Disposition') is None:
                charset = part.get_content_charset()
-               body.append(part.get_payload(decode=True).decode(charset or 'utf-8',errors="ignore"))
+               body.append(escape_html_entities(part.get_payload(decode=True).decode(charset or 'utf-8', errors="ignore")))  #Hallazgo 1
+                #body.append(part.get_payload(decode=True).decode(charset or 'utf-8',errors="ignore"))
+                
+
         body_content = "\n".join(body)       
         return body_content    
     #end get_body_to_file
@@ -127,8 +142,8 @@ class CustomSMTPHandler:
                 server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
             else:
                 server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            server.starttls()  # Iniciar cifrado TLS
-            hashed_data=decrypt(SMTP_PASSWORD, KEY, IV)
+            server.starttls(context=ssl.create_default_context(ssl.Purpose.SERVER_AUTH))  # Hallazgo 3
+            hashed_data=decrypt(SMTP_PASSWORD, KEY)
             server.login(SMTP_USERNAME, hashed_data)
             server.send_message(msg)
             server.quit()
@@ -155,8 +170,10 @@ class CustomSMTPHandler:
             folder_path = os.path.join(BASE_SAVE_PATH, "logEnvios")
             os.makedirs(folder_path, exist_ok=True)            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            random_number = random.randint(1000, 9999)
-            filename_name = f"email_{timestamp}_{random_number}"+".txt"
+            #random_number = random.randint(1000, 9999)
+            #filename_name = f"email_{timestamp}_{random_number}"+".txt"
+            random_number = secrets.randbelow(9000) + 1000  # Hallazgo 2: Usar secrets para números aleatorios
+            filename_name = f"email_{timestamp}_{random_number}.txt"
             # Guarda el contenido del cuerpo en un archivo de texto dentro de la carpeta
             file_content = f"Destinatario: {recipients}\nAsunto: {subject}\n{body_content}"
             email_filepath = os.path.join(folder_path, filename_name)
