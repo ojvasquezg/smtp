@@ -50,17 +50,6 @@ KEY = properties.get('smtp.encryptKey')  # Leer la clave como cadena de texto
 LISTEN_IP=properties.get("smtp.listenIp")
 ALLOWED_PORT=properties.get("smtp.allowedPort")
 
-# Función de cifrado
-def encrypt(data, key):
-    # Generar un IV aleatorio de 16 bytes
-    iv = os.urandom(16) #Hallazgo 4
-    cipher = Cipher(algorithms.AES(key.encode('utf-8')), modes.CBC(iv), backend=default_backend())
-    encryptor = cipher.encryptor()
-    padder = padding.PKCS7(128).padder()
-    padded_data = padder.update(data.encode()) + padder.finalize()
-    ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-    # Prepend the IV to the ciphertext and encode it in Base64
-    return escape_html_entities( base64.b64encode(iv + ciphertext).decode('utf-8'))
 
 def decrypt(encrypted_data, key):
     # Decode the Base64 encoded data
