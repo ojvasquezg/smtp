@@ -47,7 +47,6 @@ SMTP_USE_SSL = properties.get('smtp.useSSL')
 BASE_SAVE_PATH = properties.get('smtp.baseSavePath')
 VALID_EXTENSIONS = properties.get('smtp.validExtension', '').split(';')
 KEY = properties.get('smtp.encryptKey')  # Leer la clave como cadena de texto
-IV = properties.get('smtp.encryptIV')    # Leer el IV como cadena de texto
 LISTEN_IP=properties.get("smtp.listenIp")
 ALLOWED_PORT=properties.get("smtp.allowedPort")
 
@@ -61,13 +60,15 @@ def encrypt(data, key):
     padded_data = padder.update(data.encode()) + padder.finalize()
     ciphertext = encryptor.update(padded_data) + encryptor.finalize()
     # Prepend the IV to the ciphertext and encode it in Base64
-    return base64.b64encode(iv + ciphertext).decode('utf-8')
+    return escape_html_entities( base64.b64encode(iv + ciphertext).decode('utf-8'))
 
 def decrypt(encrypted_data, key):
     # Decode the Base64 encoded data
     encrypted_data = base64.b64decode(encrypted_data)
-    # Extract the first 16 bytes as the IV
-    iv = encrypted_data[:16] #Hallazgo 4
+    # Extract the first 16 bytes as the IV    
+    iv = encrypted_data[:16] #Hallazgo 4 version 
+    #fin correccion hallazgo4
+
     ciphertext = encrypted_data[16:]
     # Set up the cipher with the same key and IV
     cipher = Cipher(algorithms.AES(key.encode('utf-8')), modes.CBC(iv), backend=default_backend())
@@ -76,7 +77,7 @@ def decrypt(encrypted_data, key):
     # Decrypt and unpad the data
     padded_data = decryptor.update(ciphertext) + decryptor.finalize()
     data = unpadder.update(padded_data) + unpadder.finalize()
-    return data.decode('utf-8')
+    return escape_html_entities( data.decode('utf-8'))
 
 
 class Authenticator:  
@@ -138,11 +139,17 @@ class CustomSMTPHandler:
                 attachment['Content-Disposition'] = f'attachment; filename="{filename}"'
                 msg.attach(attachment)
         try:
+            
             if SMTP_USE_SSL == 'True':
                 server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
             else:
                 server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            server.starttls(context=ssl.create_default_context(ssl.Purpose.SERVER_AUTH))  # Hallazgo 3
+            #Correcion hallazgo 3
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)            
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.set_ciphers('HIGH:!aNULL:!MD5')
+            server.starttls(context=context) # funciona
+            #fin hallazgo 3
             hashed_data=decrypt(SMTP_PASSWORD, KEY)
             server.login(SMTP_USERNAME, hashed_data)
             server.send_message(msg)
@@ -206,8 +213,6 @@ async def main():
     authRequireTls=False
     if AUTH_REQUIRE_TLS == "True":
         authRequireTls=True
-    contexto_ssl = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    contexto_ssl.load_cert_chain("code.crt", "code.key")
     handler = CustomSMTPHandler()
     controller = Controller(handler, hostname=LISTEN_IP, port=ALLOWED_PORT, authenticator=auth, auth_required=True, auth_require_tls=authRequireTls)
     controller.start()
