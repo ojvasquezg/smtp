@@ -133,14 +133,12 @@ class CustomSMTPHandler:
                 server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
             else:
                 server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            #Correcion hallazgo 3 v.1.03
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, minimum_version=ssl.TLSVersion.TLSv1_2, ciphers='HIGH:!aNULL:!MD5')
-            context.minimum_key_size = 56
             
-            #Correcion hallazgo 3 v.1.02
-            #context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)            
-            #context.minimum_version = ssl.TLSVersion.TLSv1_2
-            #context.set_ciphers('HIGH:!aNULL:!MD5')
+            #Correcion hallazgo 3 v.1.03
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)            
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.set_ciphers('HIGH:!aNULL:!MD5')
+            context.minimum_key_size = 56
             server.starttls(context=context) # funciona
             #fin hallazgo 3
             hashed_data=decrypt(SMTP_PASSWORD, KEY)
